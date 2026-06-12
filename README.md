@@ -14,8 +14,8 @@
 
 ## 1. ¿Qué es GARRA-OS?
 
-GARRA-OS es el sistema operativo distribuido que da vida a **Chappie**, un robot de
-combate. En lugar de un solo microcontrolador, el robot está gobernado por **tres nodos
+GARRA-OS es el sistema operativo distribuido que transfroma a **Chappie**, un robot de
+combate en un robot mascota. En lugar de un solo microcontrolador, el robot está gobernado por **tres nodos
 ESP32** que se reparten el trabajo y se comunican entre sí, más una **nube** (Supabase) y
 una **interfaz web** desde la que el operador manda órdenes y observa el estado del robot.
 
