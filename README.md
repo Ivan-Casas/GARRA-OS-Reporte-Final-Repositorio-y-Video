@@ -121,4 +121,4 @@ GARRA-OS/
 ## 7. Documentación
 Todos los archivos llevan encabezado con **Objetivo, Integrantes y Proyecto**, y están
 comentados línea por línea. El reporte técnico completo está en
-`docs/Reporte_Final_GARRA-OS.docx`.
+`Documentación Técnica/Reporte_Final_GARRA-OS.pdf`.
