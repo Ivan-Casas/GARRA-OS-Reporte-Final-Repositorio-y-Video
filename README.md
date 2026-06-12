@@ -1,4 +1,4 @@
-# GARRA-OS · Agente Robótico Autónomo de Combate ("Chappie")
+# GARRA-OS · Agente Robótico Autónomo de Mascota Chappie
 
 **Materia:** Sistemas Programables · **Docente:** Ma. Verónica Tapia Ibarra
 **Institución:** Instituto Tecnológico de León · Equipo **Iron Claws ITL**
