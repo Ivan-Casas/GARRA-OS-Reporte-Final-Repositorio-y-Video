@@ -1,0 +1,502 @@
+<!--
+  =========================================================================
+  PROYECTO:     GARRA-OS  -  Agente Robotico Autonomo de Combate ("Chappie")
+  ARCHIVO:      index.html   (CAPA DE INTERFAZ / DASHBOARD WEB)
+
+  OBJETIVO DEL ARCHIVO:
+    Portal de mando del operador. Envia comandos al robot escribiendo en la
+    tabla 'control_comandos' de Supabase (que el Cerebro sondea) y muestra en
+    tiempo real la telemetria de los tres nodos suscribiendose a la tabla
+    'telemetria_debug' mediante Supabase Realtime. No requiere servidor propio:
+    es un unico archivo estatico que habla directo con la nube.
+
+  INTEGRANTES:
+    - Alcala Ramos Luz Estefania      (23240079)
+    - Bahena Mora Emilio Salvador     (23240009)
+    - Casas Bastidas Jose Ivan        (23240883)
+    - Fischer Gonzalez Patrick        (23240045)
+
+  MATERIA:      Sistemas Programables
+  DOCENTE:      Ma. Veronica Tapia Ibarra
+  INSTITUCION:  Instituto Tecnologico de Leon
+  =========================================================================
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GARRA-OS | Portal de Mando</title>
+
+    <style>
+        :root {
+            --bg-base: #0B0E14;
+            --bg-panel: #151A22;
+            --border-color: #2A3241;
+            --text-main: #E2E8F0;
+            --text-muted: #94A3B8;
+            --accent-nexus: #00F0FF;
+            --status-ok: #10B981;
+            --status-error: #EF4444;
+            --bg-error: rgba(239, 68, 68, 0.15);
+            --font-mono: 'Courier New', Courier, monospace;
+            --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            width: 100%;
+            max-width: 900px;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background-color: #1A212D;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header h1 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .header h1 span { color: var(--accent-nexus); }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--status-error);
+            box-shadow: 0 0 8px var(--status-error);
+            transition: all 0.3s ease;
+        }
+
+        .indicator.connected {
+            background-color: var(--status-ok);
+            box-shadow: 0 0 8px var(--status-ok);
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .content { grid-template-columns: 1fr; }
+        }
+
+        .actions-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .section-title {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 5px;
+        }
+
+        .btn-action {
+            background-color: transparent;
+            color: var(--accent-nexus);
+            border: 1px solid var(--accent-nexus);
+            padding: 15px;
+            font-size: 1rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s, transform 0.1s, opacity 0.2s;
+        }
+
+        .btn-action:hover:not(.sending):not(.sent) {
+            background-color: var(--accent-nexus);
+            color: var(--bg-base);
+        }
+
+        .btn-action:active:not(.sending) { transform: scale(0.97); }
+
+        .btn-action.sending {
+            opacity: 0.55;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .btn-action.sent {
+            background-color: rgba(16,185,129,0.15);
+            border-color: var(--status-ok);
+            color: var(--status-ok);
+            pointer-events: none;
+        }
+
+        .btn-action.btn-error-state {
+            background-color: rgba(239,68,68,0.15);
+            border-color: var(--status-error);
+            color: var(--status-error);
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            display: none;
+        }
+
+        .btn-action.sending .spinner { display: block; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .toast-confirm {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%) translateY(12px);
+            background-color: #0D1117;
+            border: 1px solid var(--status-ok);
+            color: var(--status-ok);
+            padding: 12px 22px;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.88rem;
+            letter-spacing: 1px;
+            opacity: 0;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+            z-index: 9999;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast-confirm.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .toast-confirm.toast-error {
+            border-color: var(--status-error);
+            color: var(--status-error);
+        }
+
+        .toast-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            flex-shrink: 0;
+        }
+
+        .telemetry-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .terminal {
+            background-color: #000;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: background-color 0.3s ease;
+        }
+
+        .terminal.error-state {
+            background-color: var(--bg-error);
+            border-color: var(--status-error);
+        }
+
+        .term-line {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px dashed #333;
+            padding-bottom: 4px;
+        }
+
+        .term-label { color: var(--text-muted); }
+        .term-value { color: var(--status-ok); font-weight: bold; }
+        .terminal.error-state .term-value { color: var(--text-main); }
+        .terminal.error-state .error-code {
+            color: var(--status-error);
+            font-weight: bold;
+            animation: blink 1s infinite;
+        }
+
+        .term-msg {
+            margin-top: 10px;
+            color: var(--accent-nexus);
+            word-break: break-all;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        .status-badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #222;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <div class="header">
+            <h1>GARRA-OS <span>| Panel de Control</span></h1>
+            <div class="connection-status">
+                <span id="db-status-text">Desconectado</span>
+                <div class="indicator" id="db-indicator"></div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="actions-panel">
+                <div class="section-title">Comandos de Flujo</div>
+
+                <button class="btn-action" id="btn-bailar" onclick="enviarComando('BAILAR', this)">
+                    <span class="spinner"></span>
+                    <span class="btn-label">BAILAR</span>
+                </button>
+
+                <button class="btn-action" id="btn-seguir" onclick="enviarComando('SEGUIR', this)">
+                    <span class="spinner"></span>
+                    <span class="btn-label">SEGUIR</span>
+                </button>
+
+                <button class="btn-action" id="btn-alerta"
+                    style="border-color:var(--status-error);color:var(--status-error);"
+                    onclick="enviarComando('ALERTA', this)">
+                    <span class="spinner"></span>
+                    <span class="btn-label">ALERTA</span>
+                </button>
+
+                <button class="btn-action" id="btn-reposo"
+                    style="border-color:var(--text-muted);color:var(--text-muted);"
+                    onclick="enviarComando('REPOSO', this)">
+                    <span class="spinner"></span>
+                    <span class="btn-label">REPOSO</span>
+                </button>
+            </div>
+
+            <div class="telemetry-panel">
+                <div class="section-title">Telemetría Debug (Nodos ESP32)</div>
+                <div class="terminal" id="terminal-screen">
+                    <div class="term-line">
+                        <span class="term-label">Nodo Maestro:</span>
+                        <span class="term-value status-badge" id="val-maestro">ESPERANDO...</span>
+                    </div>
+                    <div class="term-line">
+                        <span class="term-label">Nodo Motores:</span>
+                        <span class="term-value status-badge" id="val-motores">ESPERANDO...</span>
+                    </div>
+                    <div class="term-line">
+                        <span class="term-label">Nodo Expresión:</span>
+                        <span class="term-value status-badge" id="val-expresion">ESPERANDO...</span>
+                    </div>
+                    <div class="term-line" style="margin-top:10px;">
+                        <span class="term-label">Código Error:</span>
+                        <span class="term-value error-code" id="val-error">0</span>
+                    </div>
+                    <div class="term-msg">> <span id="val-mensaje">Inicializando enlace de telemetría...</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-confirm" id="toast-confirm">
+        <div class="toast-dot"></div>
+        <span id="toast-text">ORDEN ENVIADA</span>
+    </div>
+
+    <!-- Cargamos el SDK de Supabase al final para evitar conflictos de carga -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Objeto global donde guardamos configuracion y el cliente de Supabase.
+        window.GARRA = {};
+        window.GARRA.URL = 'https://wybhfefasaduuqapzgaz.supabase.co';  // URL del proyecto en la nube.
+        // Llave publica "anon" (segura de exponer; la protegen las politicas RLS).
+        window.GARRA.KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5YmhmZWZhc2FkdXVxYXB6Z2F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNDk0ODksImV4cCI6MjA5NDcyNTQ4OX0.qEZ-5tQ3jy0QxjoGMh8MlQ0Sq5_3kIXYn4u34-Fbfw8';
+        // Creamos el cliente que usaremos para leer/escribir y suscribirnos a Realtime.
+        window.GARRA.db  = window.supabase.createClient(window.GARRA.URL, window.GARRA.KEY);
+
+        var dbIndicator  = document.getElementById('db-indicator');
+        var dbStatusText = document.getElementById('db-status-text');
+        var terminalScreen = document.getElementById('terminal-screen');
+        var uiMaestro    = document.getElementById('val-maestro');
+        var uiMotores    = document.getElementById('val-motores');
+        var uiExpresion  = document.getElementById('val-expresion');
+        var uiError      = document.getElementById('val-error');
+        var uiMensaje    = document.getElementById('val-mensaje');
+
+        var btnOriginalStyles = {
+            'btn-bailar': { color: 'var(--accent-nexus)', border: '1px solid var(--accent-nexus)' },
+            'btn-seguir': { color: 'var(--accent-nexus)', border: '1px solid var(--accent-nexus)' },
+            'btn-alerta': { color: 'var(--status-error)', border: '1px solid var(--status-error)' },
+            'btn-reposo': { color: 'var(--text-muted)',   border: '1px solid var(--text-muted)'   },
+        };
+
+        var toastTimer;
+
+        function showToast(msg, isError) {
+            var toast = document.getElementById('toast-confirm');
+            var toastTxt = document.getElementById('toast-text');
+            clearTimeout(toastTimer);
+            toast.classList.remove('visible', 'toast-error');
+            toastTxt.textContent = msg;
+            if (isError) toast.classList.add('toast-error');
+            void toast.offsetWidth;
+            toast.classList.add('visible');
+            toastTimer = setTimeout(function() { toast.classList.remove('visible'); }, 3000);
+        }
+
+        // Envia un comando al robot ACTUALIZANDO la fila id=1 de control_comandos.
+        async function enviarComando(comandoStr, btn) {
+            // Evitamos doble clic mientras un envio esta en curso o recien completado.
+            if (btn.classList.contains('sending') || btn.classList.contains('sent')) return;
+
+            var label = btn.querySelector('.btn-label');
+            var originalLabel = label.textContent;          // Guardamos el texto original del boton.
+            var originalStyle = btnOriginalStyles[btn.id];  // Guardamos su estilo original.
+
+            btn.classList.add('sending');                   // Mostramos el estado "enviando" (spinner).
+            label.textContent = 'ENVIANDO...';
+
+            try {
+                // UPDATE sobre la fila maestra: aqui ocurre la magia Web -> ESP32.
+                var result = await window.GARRA.db
+                    .from('control_comandos')
+                    .update({ comando: comandoStr })
+                    .eq('id', 1);
+
+                if (result.error) throw result.error;       // Si Supabase devuelve error, saltamos al catch.
+
+                btn.classList.remove('sending');
+                btn.classList.add('sent');
+                btn.style.color  = '';
+                btn.style.border = '';
+                label.textContent = '✓ ' + originalLabel;
+                showToast('✓ ORDEN ENVIADA — [' + comandoStr + ']', false);
+
+                setTimeout(function() {
+                    btn.classList.remove('sent');
+                    label.textContent = originalLabel;
+                    if (originalStyle) {
+                        btn.style.color  = originalStyle.color;
+                        btn.style.border = originalStyle.border;
+                    }
+                }, 2000);
+
+            } catch(err) {
+                console.error('Error:', err);
+                btn.classList.remove('sending');
+                btn.classList.add('btn-error-state');
+                label.textContent = '✗ ERROR';
+                showToast('✗ ERROR: ' + err.message, true);
+
+                setTimeout(function() {
+                    btn.classList.remove('btn-error-state');
+                    label.textContent = originalLabel;
+                    if (originalStyle) {
+                        btn.style.color  = originalStyle.color;
+                        btn.style.border = originalStyle.border;
+                    }
+                }, 2500);
+            }
+        }
+
+        // Nos suscribimos a Supabase Realtime: cada cambio en telemetria_debug
+        // dispara la actualizacion de la consola en pantalla (flujo ESP32 -> Web).
+        window.GARRA.db.channel('cambios_telemetria_nodos')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'telemetria_debug' },
+                function(payload) { actualizarConsolaDOM(payload.new); } // payload.new = fila nueva.
+            )
+            .subscribe(function(status) {
+                if (status === 'SUBSCRIBED') {                  // Enlace Realtime establecido.
+                    dbIndicator.classList.add('connected');
+                    dbStatusText.innerText = 'Conectado (Realtime)';
+                    uiMensaje.innerText = 'Enlace establecido. Esperando datos...';
+                } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') { // Enlace caido.
+                    dbIndicator.classList.remove('connected');
+                    dbStatusText.innerText = 'Desconectado';
+                }
+            });
+
+        // Vuelca los datos de telemetria recibidos en la consola visual del dashboard.
+        function actualizarConsolaDOM(datos) {
+            if (!datos) return;
+            uiMaestro.innerText   = datos.estado_maestro   || 'N/A'; // Estado del Cerebro.
+            uiMotores.innerText   = datos.estado_motores   || 'N/A'; // Estado de Motores.
+            uiExpresion.innerText = datos.estado_expresion || 'N/A'; // Estado de Expresion.
+
+            var codError = datos.codigo_error || 0;
+            uiError.innerText   = codError;
+            uiMensaje.innerText = datos.mensaje || 'Actualizacion sin mensaje.';
+
+            // Si hay codigo de error (>0) tenimos la consola de rojo (modo alarma).
+            if (codError > 0) {
+                terminalScreen.classList.add('error-state');
+                uiMaestro.style.color = uiMotores.style.color = uiExpresion.style.color = 'inherit';
+            } else {
+                terminalScreen.classList.remove('error-state');
+                uiMaestro.style.color = uiMotores.style.color = uiExpresion.style.color = 'var(--status-ok)';
+            }
+        }
+    </script>
+</body>
+</html>
